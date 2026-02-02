@@ -3,7 +3,10 @@ import re
 import glob
 import os
 import time
-from xls2xlsx import XLS2XLSX
+from typing import Dict
+import xlrd
+from openpyxl import Workbook
+from datetime import datetime
 
 def str_to_bool(s):
     if s.lower() in ['true', 't', 'yes', 'y', '1']:
@@ -47,11 +50,32 @@ def convert_x2x(downloadPath):
         if os.path.exists(xlsx_file):
             continue
 
-        # Convert .xls to .xlsx
-        x2x = XLS2XLSX(xls_file)
-        x2x.to_xlsx(xlsx_file)
+        # Convert .xls to .xlsx without pandas to support xlrd==1.2.0
+        try:
+            book = xlrd.open_workbook(xls_file, formatting_info=False)
+            wb_out = Workbook()
+            first_sheet = True
+            for sheet in book.sheets():
+                ws_out = wb_out.active if first_sheet else wb_out.create_sheet()
+                ws_out.title = (sheet.name or "Sheet1")[:31]
+                first_sheet = False
 
-        print(f"Converted \"{xls_file}\" to \"{xlsx_file}\"")
+                for row_idx in range(sheet.nrows):
+                    for col_idx in range(sheet.ncols):
+                        cell = sheet.cell(row_idx, col_idx)
+                        value = cell.value
+                        if cell.ctype == xlrd.XL_CELL_DATE:
+                            try:
+                                y, m, d, hh, mm, ss = xlrd.xldate_as_tuple(value, book.datemode)
+                                value = datetime(y, m, d, hh, mm, ss)
+                            except Exception:
+                                pass
+                        ws_out.cell(row=row_idx + 1, column=col_idx + 1, value=value)
+
+            wb_out.save(xlsx_file)
+            print(f"Converted \"{xls_file}\" to \"{xlsx_file}\"")
+        except Exception as e:
+            print(f"Failed to convert \"{xls_file}\": {e}")
     return found_status
 
 def extract_product_name(file_name):
@@ -87,23 +111,29 @@ def merge_ingredients(downloadPath, fileExtension='.xlsx', export_data=False):
         print(currentFile)
         # Read only the desired columns
         df = pd.read_excel(currentFile)
+        print(f"File: {currentFile}, Columns: {df.shape[1]}")
 
-        if export_data == False:
-            # Set the header to the second row
-            df.columns = ['Date', 'Mã_tờ_khai', 'Công_ty_nhập', 'Công_ty_nhập (TA)', 
-            'Địa_chỉ', 'Mã_số_thuế', 'Nhà_cung_cấp','Địa_chỉ_(ncc)',
-            'Quốc_gia_xuất_xứ', 'Mã_nước_xuất_khẩu', 'HScode', 'Mô_tả_sản_phẩm', 'Số_lượng',
-            'Đơn_vị', 'Khối_lượng', 'Thành_tiền', 'Tiền_tệ', 'Đơn_giá',
-            '单价单位', '原单价','Tỷ giá', '进口类型', '进口税率', '进口税额', '税额（越南盾)', 'Điều_kiện_giao_hàng', '付款方式',
-            '海关名称', '海关代码', '海关代理代码', 'Cảng xuất', '起运港代码', 'Cảng nhập', '目的港代码', 
-            '原产国', '原产国家代码','承运人', '追踪号'] # '起运港': cang xuat, '目的港': 'cang nhap
-        else:
-            df.columns = ['Date', 'Mã_tờ_khai', 'Công_ty_nhập', 
-            'Địa_chỉ', "Nước_nhập_khẩu", 'Nhà_cung_cấp', "Mã_số_thuế", "Nước_xuất_khẩu",
-            'HScode', 'Mô_tả_sản_phẩm', 'Số_lượng','Đơn_vị', 'Khối_lượng',
-            'Thành_tiền', 'Đơn_giá','Tiền_tệ',
-            '出口税额',	'出口税率',	'出口税额单位',	'税额（越南盾)','Điều_kiện_giao_hàng','付款方式','Cảng nhập',
-            '海关代码',	"海关代理代码",	"Cảng xuất","起运港代码",	"目的港", "目的港代码", "运输方式", "承运人","追踪号"]
+        try:
+            if export_data == False:
+                # Set the header to the second row
+                df.columns = ['Date', 'Mã_tờ_khai', 'Công_ty_nhập', 'Công_ty_nhập (TA)', 
+                'Địa_chỉ', 'Mã_số_thuế', 'Nhà_cung_cấp','Địa_chỉ_(ncc)',
+                'Quốc_gia_xuất_xứ', 'Mã_nước_xuất_khẩu', 'HScode', 'Mô_tả_sản_phẩm', 'Số_lượng',
+                'Đơn_vị', 'Khối_lượng', 'Thành_tiền', 'Tiền_tệ', 'Đơn_giá',
+                '单价单位', '原单价','Tỷ giá', '进口类型', '进口税率', '进口税额', '税额（越南盾)', 'Điều_kiện_giao_hàng', '付款方式',
+                '海关名称', '海关代码', '海关代理代码', 'Cảng xuất', '起运港代码', 'Cảng nhập', '目的港代码', 
+                '原产国', '原产国家代码','承运人', '追踪号'] # '起运港': cang xuat, '目的港': 'cang nhap
+            else:
+                df.columns = ['Date', 'Mã_tờ_khai', 'Công_ty_nhập', 
+                'Địa_chỉ', "Nước_nhập_khẩu", 'Nhà_cung_cấp', "Mã_số_thuế", "Nước_xuất_khẩu",
+                'HScode', 'Mô_tả_sản_phẩm', 'Số_lượng','Đơn_vị', 'Khối_lượng',
+                'Thành_tiền', 'Đơn_giá','Tiền_tệ',
+                '出口税额',	'出口税率',	'出口税额单位',	'税额（越南盾)','Điều_kiện_giao_hàng','付款方式','Cảng nhập',
+                '海关代码',	"海关代理代码",	"Cảng xuất","起运港代码",	"目的港", "目的港代码", "运输方式", "承运人","追踪号"]
+        except ValueError as e:
+            print(f"Error processing {currentFile}: {e}")
+            print(f"Expected 38 columns (export_data=False) or 32 columns (export_data=True), but got {df.shape[1]}")
+            continue
         
         # Drop the first row (0 is not the old column names)
         df = df.drop([0])
